@@ -1,10 +1,6 @@
 from collections import defaultdict
 import random
 
-import sys
-sys.path.append('/Users/dparsons/snoscode/python/util')
-from davetools import assert_equals, trace
-
 #--- Trie functions ------------------------------------------------
 # TODO: make a class for this
 
@@ -38,11 +34,11 @@ def get_words(trie, prefix=''):
             w.extend(get_words(trie.get(c), prefix + c))
     return w
 
-def words_in_file(filename):
+def words_in_file(filename, minlen=4):
     with open(filename) as corpus:
         for line in corpus:
             word = line.split('\t')[0].rstrip().lower()
-            if len(word) > 3:
+            if len(word) >= minlen:
                 yield word
 
 #--- Boggle stuff ------------------------------------------------
@@ -166,7 +162,8 @@ def print_solution(word_paths):
 
 if __name__ == "__main__":
 
-    filename = 'TWL06.txt'
+    import sys
+    filename = sys.argv[1] if len(sys.argv) > 1 else 'TWL06.txt'
 
     print "number of 4+ letter words in %s: %d" % \
         (filename, len(list(words_in_file(filename))))
