@@ -11,6 +11,11 @@ from davetools import assert_equals, trace
 def make_trie():
     return defaultdict(make_trie)
 
+def add_words(trie, words=[]):
+    for word in words:
+        add_word(trie, word)
+    return trie
+
 def add_word(trie, word):
     if word == '':
         trie['!']  # weirdly, trie['!'] = None breaks everything...
@@ -33,31 +38,16 @@ def get_words(trie, prefix=''):
             w.extend(get_words(trie.get(c), prefix + c))
     return w
 
-def load_file(filename):
-    t = make_trie()
-    words = 0
-    lines = 0
+def words_in_file(filename):
     with open(filename) as corpus:
         for line in corpus:
             word = line.split('\t')[0].rstrip().lower()
             if len(word) > 3:
-                add_word(t, word)
-                words += 1
-            lines += 1
-    print 'loaded %d words from %s (%d lines)' % (words, filename, lines)
-    return t
+                yield word
 
 #--- Boggle stuff ------------------------------------------------
 
-# t = load_file('count_1w.txt')
-t = load_file('TWL06.txt')
-
-# words = get_words(t)
-# for word in words:
-#     print word
-# print 'number of words in trie: %d' % len(words)
-
-n = 5
+n = 6
 
 squares = [(i, j) for i in range(n) for j in range(n)]
 
@@ -77,17 +67,23 @@ def random_board():
 def make_board(chooser):
     return [[chooser() for _ in range(n)] for _ in range(n)]
 
-def letter_dist(filename):
+def letter_dist(words):
+    """Construct the frequency distribution of letters in the given words.
+
+    Returns a tuple (letters, dist, total), where
+        letters is a list of all letters found in the words, sorted in
+            descending order of frequency;
+        dist is a dictionary mapping each letter to its occurrence count; and
+        total is the total number of letters, i.e. sum(dist.values()).
+
+    """
     dist = defaultdict(lambda: 0)
-    with open(filename) as corpus:
-        for line in corpus:
-            word = line.split('\t')[0].rstrip().lower()
-            if len(word) > 3:
-                for letter in word:
-                    dist[letter] += 1
-    letters = list(dist.items())
-    letters.sort(key=lambda x: x[1], reverse=True)
-    return [x[0] for x in letters], dist, sum([x[1] for x in letters])
+    for word in words:
+        for letter in word:
+            dist[letter] += 1
+    items = list(dist.items())
+    items.sort(key=lambda x: x[1], reverse=True)
+    return [x[0] for x in items], dist, sum([x[1] for x in items])
 
 def choose_by_dist(choices, dist, total):
     i = random.randrange(total)
@@ -98,7 +94,6 @@ def choose_by_dist(choices, dist, total):
             break
         else:
             s += dist[c]
-#    print '%d/%d => \'%s\'' %(i, total, repr(r))
     return r
 
 def random_board_dist(letters, dist, total):
@@ -112,8 +107,15 @@ dice = map(list, [
         'fiprsy', 'gorrvw', 'iprrry', 'nootuw', 'ooottu'])
 
 def random_boggle_board():
-    random.shuffle(dice)
-    letters = iter([random.choice(die) for die in dice])
+    """Create a random Boggle puzzle using the official dice."""
+
+    # If n > 5 we'll need more than one set of 25 dice.
+    
+    sets = 1 + (n * n - 1) / 25
+    d = list(dice)
+    random.shuffle(d)
+
+    letters = iter([random.choice(die) for die in d * sets])
     return make_board(lambda: next(letters))  # TODO: make this just take the iterator directly
 
 def path_str(path):
@@ -162,45 +164,47 @@ def print_solution(word_paths):
         print '%d: %s (%s)' % (j + 1, word,
                                ', '.join(map(path_str, word_paths[word])))
 
-# board = map(list, ['homta',
-#                    'nteyy',
-#                    'jnfre',
-#                    'alpnc',
-#                    'maite'])
+if __name__ == "__main__":
 
-letters, dist, total = letter_dist('count_1w.txt')
+    filename = 'TWL06.txt'
 
-#print letters
-#for  x in letters:
-#    print '%s: %d' % (x, dist[x])
-#print 'total: %d' % total
+    print "number of 4+ letter words in %s: %d" % \
+        (filename, len(list(words_in_file(filename))))
+    trie = make_trie()
+    add_words(trie, words_in_file(filename))
+    print 'number of words in trie: %d' % len(get_words(trie))
 
-def avg_solution_count(board_maker, reps=1000):
-    c = 0
-    for i in range(reps):
-        board = board_maker()
-        soln = find_words(board, t)
-        c += len(soln)
-    return 1.0 * c / reps
+    letters, dist, total = letter_dist(words_in_file(filename))
 
-print "average solution count of even distribution: %f" % avg_solution_count(lambda: random_board())
-print "average solution count of weighed distribution: %f" % avg_solution_count(lambda: random_board_dist(letters, dist, total))
-print "average solution count of boggle distribution: %f" % avg_solution_count(lambda: random_boggle_board())
+    def avg_solution_count(board_maker, reps=1000):
+        c = 0
+        for i in range(reps):
+            board = board_maker()
+            soln = find_words(board, trie)
+            c += len(soln)
+        return 1.0 * c / reps
 
-#for i in range(1, 1000):
-for i in range(1, 2):
-    if i % 100 == 0:
-        print i
+    print "average solution count with even distribution: %f" % \
+        avg_solution_count(lambda: random_board())
+    print "average solution count with weighted distribution: %f" % \
+        avg_solution_count(lambda: random_board_dist(letters, dist, total))
+    print "average solution count with Boggle dice distribution: %f" % \
+        avg_solution_count(lambda: random_boggle_board())
 
-#    board = random_board_dist(letters, dist, total)
-    board = random_boggle_board()
-    soln = find_words(board, t)
+#    for i in range(1, 1000):
+    for i in range(1, 2):
+        if i % 100 == 0:
+            print i
 
-    if True or len(soln) >= 300:
-        print '=== puzzle %d =============================================================' % i
-        print_board(board)
-        print '---------'
-        print_solution(soln)
+        board = random_board_dist(letters, dist, total)
+#        board = random_boggle_board()
+        soln = find_words(board, trie)
+
+        if True or len(soln) >= 300:
+            print '=== puzzle %d =============================================================' % i
+            print_board(board)
+            print '---------'
+            print_solution(soln)
 
 # TODO: add some assert-based tests
 #
