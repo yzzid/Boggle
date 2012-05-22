@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import random
 
 #--- Trie functions ------------------------------------------------
@@ -43,25 +43,27 @@ def words_in_file(filename, minlen=4):
 
 #--- Boggle stuff ------------------------------------------------
 
-n = 6
-
-squares = [(i, j) for i in range(n) for j in range(n)]
-
-successors = {(i, j): set([(i + a, j + b)
-                           for a in range(-1, 2) for b in range(-1, 2)
-                           if 0 <= i + a < n and 0 <= j + b < n
-                           and (a, b) != (0, 0)])
-              for (i, j) in squares}
+Board = namedtuple('Board', ['grid', 'squares', 'successors'])
 
 def print_board(board):
-    for row in board:
+    for row in board.grid:
         print ' '.join(row)
 
-def random_board():
-    return make_board(lambda: random.choice('abcdefghijklmnopqrstuvwxyz'))
+def random_board(n):
+    return make_board(n, lambda: random.choice('abcdefghijklmnopqrstuvwxyz'))
 
-def make_board(chooser):
-    return [[chooser() for _ in range(n)] for _ in range(n)]
+def make_board(n, chooser):
+    squares = [(i, j) for i in range(n) for j in range(n)]
+
+    successors = {(i, j): set([(i + a, j + b)
+                               for a in range(-1, 2) for b in range(-1, 2)
+                               if 0 <= i + a < n and 0 <= j + b < n
+                               and (a, b) != (0, 0)])
+                  for (i, j) in squares}
+
+    return Board(grid=[[chooser() for _ in range(n)] for _ in range(n)],
+                 squares=squares,
+                 successors=successors)
 
 def letter_dist(words):
     """Construct the frequency distribution of letters in the given words.
@@ -92,42 +94,40 @@ def choose_by_dist(choices, dist, total):
             s += dist[c]
     return r
 
-def random_board_dist(letters, dist, total):
-    return make_board(lambda: choose_by_dist(letters, dist, total))
+def random_board_dist(n, letters, dist, total):
+    return make_board(n, lambda: choose_by_dist(letters, dist, total))
 
-dice = map(list, [
+boggle_dice = map(list, [
         'aaafrs', 'aaeeee', 'aafirs', 'adennn', 'aeeeem',
         'aeegmu', 'aegmnn', 'afirsy', 'bjkqxz', 'ccenst',
         'ceiilt', 'ceiplt', 'ceipst', 'ddhnot', 'dhhlor',
         'dhlnor', 'dhlnor', 'eiiitt', 'emottt', 'ensssu',
         'fiprsy', 'gorrvw', 'iprrry', 'nootuw', 'ooottu'])
 
-def random_boggle_board():
+def random_boggle_board(n):
     """Create a random Boggle puzzle using the official dice."""
 
     # If n > 5 we'll need more than one set of 25 dice.
-    
+    dice = list(boggle_dice)
+    random.shuffle(dice)
     sets = 1 + (n * n - 1) / 25
-    d = list(dice)
-    random.shuffle(d)
-
-    letters = iter([random.choice(die) for die in d * sets])
-    return make_board(lambda: next(letters))  # TODO: make this just take the iterator directly
+    letters = iter([random.choice(die) for die in dice * sets])
+    return make_board(n, lambda: next(letters))  # TODO: make this just take the iterator directly
 
 def path_str(path):
-    return '-'.join(['%d%d' % (p[0], p[1]) for p in path])
+    return '-'.join(['%d:%d' % (p[0], p[1]) for p in path])
 
 def path_word(board, path):
-    return ''.join([board[i][j] for (i, j) in path])
+    return ''.join([board.grid[i][j] for (i, j) in path])
 
 def find_words(board, trie):
     """Find all paths in the given board which trace out valid words
     according to the given trie.  Returned is a dictionary which maps
     each word found to a list of the paths which generate it."""
     paths = []
-    for (i, j) in squares:
+    for (i, j) in board.squares:
         paths.extend(find_paths_from(board,
-                                     trie.get(board[i][j]),
+                                     trie.get(board.grid[i][j]),
                                      [(i, j)]))
 
     word_paths = defaultdict(lambda: [])
@@ -144,8 +144,8 @@ def find_paths_from(board, trie, path):
     w = []
     if trie.get('!') is not None:
         w.append(path)
-    for (i, j) in successors[path[-1]] - set(path):
-        c = board[i][j]
+    for (i, j) in board.successors[path[-1]] - set(path):
+        c = board.grid[i][j]
         w.extend(find_paths_from(board, trie.get(c), path + [(i, j)])) 
     return w
 
@@ -163,7 +163,8 @@ def print_solution(word_paths):
 if __name__ == "__main__":
 
     import sys
-    filename = sys.argv[1] if len(sys.argv) > 1 else 'TWL06.txt'
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    filename = sys.argv[2] if len(sys.argv) > 2 else 'TWL06.txt'
 
     print "number of 4+ letter words in %s: %d" % \
         (filename, len(list(words_in_file(filename))))
@@ -182,19 +183,19 @@ if __name__ == "__main__":
         return 1.0 * c / reps
 
     print "average solution count with even distribution: %f" % \
-        avg_solution_count(lambda: random_board())
+        avg_solution_count(lambda: random_board(n))
     print "average solution count with weighted distribution: %f" % \
-        avg_solution_count(lambda: random_board_dist(letters, dist, total))
+        avg_solution_count(lambda: random_board_dist(n, letters, dist, total))
     print "average solution count with Boggle dice distribution: %f" % \
-        avg_solution_count(lambda: random_boggle_board())
+        avg_solution_count(lambda: random_boggle_board(n))
 
 #    for i in range(1, 1000):
     for i in range(1, 2):
         if i % 100 == 0:
             print i
 
-        board = random_board_dist(letters, dist, total)
-#        board = random_boggle_board()
+        board = random_board_dist(n, letters, dist, total)
+#        board = random_boggle_board(n)
         soln = find_words(board, trie)
 
         if True or len(soln) >= 300:
